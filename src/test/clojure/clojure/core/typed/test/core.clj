@@ -3021,7 +3021,9 @@
   (is-tc-err
     (fn [] (nth {1 0} 0)))
   (is-tc-e (nth [1] 0))
+  (is-tc-e (nth (seq [1]) 0))
   (is-tc-e (nth '(1) 0))
+  (is-tc-e (nth (seq '(1)) 0))
   (is-tc-e (nth "a" 0))
   (is-tc-e (let [nth (ann-form nth 
                                (clojure.core.typed/All [x y] 
