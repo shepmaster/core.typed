@@ -10,8 +10,11 @@
             [clojure.core.typed.filter-rep :as fl]
             [clojure.core.typed.path-rep :as pe]
             [clojure.core.typed.object-rep :as obj]
+            [clojure.core.typed.check.invoke :as invoke]
+            [clojure.core.typed.util-vars :as vs]
+            [clojure.core.typed :as t]
             [clojure.core.typed.check.utils :as cu])
-  (:import (clojure.lang ISeq Seqable)))
+  (:import (clojure.lang ISeq Seqable Indexed)))
 
 (defn ^:private expr->type [expr]
   (if expr (-> expr u/expr-type r/ret-t)))
@@ -99,6 +102,61 @@
       (update-in target-o [:path] concat [(pe/NthPE-maker idx)])
       target-o)))
 
+(defn nth-type-for-idx
+  "Same as the normal type for nth except for the case where
+  we know we *always* ignore the default (eg. `(nth [1 2] 0 nil) ;=> Int`)
+  and where we *only* use the default (eg. `(nth [1 2] 2 nil)` ;=> nil)"
+  [idx]
+  {:pre [(con/nat? idx)]}
+  (let [x 'x
+        d 'd
+        s-or-i (c/Un (c/-name `t/SequentialSeqable (r/make-F x))
+                     (c/RClass-of Indexed [(r/make-F x)]))]
+    (c/Poly* [x d]
+             [r/no-bounds r/no-bounds]
+             (r/make-FnIntersection
+              ;; [(U (Indexed x) (SequentialSeqable x)) Int -> x]
+              (r/make-Function
+               [s-or-i
+                (c/-name `t/Int)]
+               (r/make-F x))
+              ;; [(U (I (CountRange idx++) (U (Seqable x) (Indexed x)))
+              ;;     (HSequential [Any*idx x Any *]))
+              ;;  Num Any -> x]
+              (r/make-Function
+               [(c/Un (c/In (r/make-CountRange (inc idx))
+                            s-or-i)
+                      (r/-hsequential (concat (repeat idx r/-any)
+                                              [(r/make-F x)])
+                                      :rest r/-any))
+                (c/-name `t/Int)
+                ;; default is never used
+                r/-any]
+               (r/make-F x))
+              ;; [(U (I (CountRange 0 idx) (U (Seqable x) (Indexed x)))
+              ;;      nil)
+              ;;  Num d -> d]
+              (r/make-Function
+               [(c/Un (c/In (r/make-CountRange 0 idx)
+                            s-or-i)
+                      r/-nil)
+                (c/-name `t/Int)
+                ;; default is *only* used
+                (r/make-F d)]
+               (r/make-F d))
+              ;; [(U (Indexed x) (SequentialSeqable x) nil) Int d -> (U x d)]
+              (r/make-Function
+               [(c/Un s-or-i r/-nil)
+                (c/-name `t/Int)
+                (r/make-F d)]
+               (c/Un (r/make-F x)
+                     (r/make-F d)))
+              ;; [(U (Indexed x) (SequentialSeqable x) nil) Int -> (U x nil)]
+              (r/make-Function
+               [(c/Un s-or-i r/-nil)
+                (c/-name `t/Int)]
+               (r/make-F x))))))
+
 (defn invoke-nth [check-fn {:keys [args] :as expr} expected & {:keys [cargs]}]
   {:pre [((some-fn nil? vector?) cargs)]}
   (let [_ (assert (#{2 3} (count args)) (str "nth takes 2 or 3 arguments, actual " (count args)))
@@ -108,19 +166,32 @@
                   (map c/fully-resolve-type (:types ts))
                   [ts]))
         num-t (expr->type ne)
-        default-t (expr->type de)]
+        default-t (expr->type de)
+        idx (if (r/Value? num-t)
+              (let [n (:val num-t)]
+                (if (con/nat? n)
+                  n)))]
     (cond
-      (and (r/Value? num-t)
-           (con/nat? (:val num-t))
-           (every? (some-fn r/Nil?
-                            r/HeterogeneousVector?
-                            r/HeterogeneousList?
-                            r/HeterogeneousSeq?)
-                   types))
-      (let [idx (:val num-t)]
-        (assoc expr
-          :args cargs
-          u/expr-type (r/ret (nth-type types idx default-t)
-                             (nth-filter te de idx default-t)
-                             (nth-object te idx))))
-      :else cu/not-special)))
+     (and idx
+          (every? (some-fn r/Nil?
+                           r/HeterogeneousVector?
+                           r/HeterogeneousList?
+                           r/HeterogeneousSeq?)
+                  types))
+     (assoc expr
+       :args cargs
+       u/expr-type (r/ret (nth-type types idx default-t)
+                          (nth-filter te de idx default-t)
+                          (nth-object te idx)))
+
+     idx
+     (binding [vs/*current-expr* expr]
+       (invoke/normal-invoke check-fn
+                             expr (:fn expr) args
+                             expected
+                             :cfexpr (assoc (:fn expr)
+                                       u/expr-type (r/ret (nth-type-for-idx idx)))
+                             :cargs cargs))
+
+     :else
+     cu/not-special)))

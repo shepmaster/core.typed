@@ -2291,8 +2291,11 @@
         r/ret-t)
       :else r/-any)))
 
-(defn -tapp [op & rands]
-  (r/TApp-maker op (seq rands)))
+(defn -tapp
+  ([op]
+     (-tapp op nil))
+  ([op rands]
+     (r/TApp-maker op (seq rands))))
 
 (defn -name [sym & ts]
   (let [nme (r/Name-maker sym)]

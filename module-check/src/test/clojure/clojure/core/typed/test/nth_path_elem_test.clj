@@ -116,3 +116,19 @@
        (fn [stmt :- Statement] :- Any
          (if (= :params (first stmt))
            (ann-form stmt StatementA)))))))
+
+(deftest count-range-nth
+  (is-tc-e
+    (fn [a :- (I (CountRange 1) (ASeq Num))] :- Num
+      (nth a 0 nil)))
+  (is-tc-e
+    (fn [a :- (U (I (CountRange 1) (ASeq Num))
+                 '[Sym])]
+      :- (U Sym Num)
+      (nth a 0 nil)))
+  (is-tc-e
+    (fn [a :- (U (I (ExactCount 0) (ASeq Num))
+                 nil
+                 '[])]
+      :- nil
+      (nth a 0 nil))))

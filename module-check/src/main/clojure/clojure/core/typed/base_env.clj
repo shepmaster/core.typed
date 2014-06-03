@@ -110,9 +110,9 @@ clojure.java.io/IOFactory
     (prs/parse-type
       '(All [x y]
             (IFn 
-              [(U (Indexed x) (SequentialSeqable x)) AnyInteger -> x]
-              [(U (Indexed x) (SequentialSeqable x) nil) AnyInteger y -> (U x y)]
-              [(U (Indexed x) (SequentialSeqable x) nil) AnyInteger -> (U x nil)])))))
+              [(U (Indexed x) (SequentialSeqable x)) Int -> x]
+              [(U (Indexed x) (SequentialSeqable x) nil) Int y -> (U x y)]
+              [(U (Indexed x) (SequentialSeqable x) nil) Int -> (U x nil)])))))
 
 (delay-and-cache-env ^:private init-var-env
   (reset-alias-env!)
